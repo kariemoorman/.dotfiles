@@ -5,6 +5,12 @@ Secret scanning on both pre-commit and pre-push using Git hooks using TruffleHog
 
 ## Setup 
 
+- Install dependencies:
+
+```
+brew install trufflehog gitleaks
+```
+
 - Create a templates directory:
 
 ```
