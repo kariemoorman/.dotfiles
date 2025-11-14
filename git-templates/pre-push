@@ -1,0 +1,7 @@
+#!/bin/sh
+echo "Running Gitleaks scan before push..."
+gitleaks detect --source=. --config ~/.gitleaks/gitleaks.toml --redact --no-banner
+if [ $? -ne 0 ]; then
+  echo "🚨 Secrets detected! Push blocked."
+  exit 1
+fi
