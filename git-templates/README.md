@@ -15,8 +15,8 @@ mkdir -p ~/.git-templates/hooks
 - Download files to `~/.git-templates/hooks` and make them executable:
 
 ```
-cd ~/.git-templates/hooks && curl -O https://raw.githubusercontent.com/kariemoorman/.dotfiles/main/git-templates/pre-commit
-cd ~/.git-templates/hooks && curl -O https://raw.githubusercontent.com/kariemoorman/.dotfiles/main/git-templates/pre-push
+cd ~/.git-templates/hooks && curl -O https://raw.githubusercontent.com/kariemoorman/.dotfiles/refs/heads/main/git-templates/pre-commit
+cd ~/.git-templates/hooks && curl -O https://raw.githubusercontent.com/kariemoorman/.dotfiles/refs/heads/main/git-templates/pre-push
 
 chmod +x ~/.git-templates/hooks/*
 ```
