@@ -10,7 +10,7 @@ if [ -z "$STAGED_FILES" ]; then
     exit 0
 fi
 
-CONFIG_PATH="$HOME/.trufflehog/config.json"
+CONFIG_PATH="$HOME/.trufflehog/config.yml"
 EXIT_CODE=0
 
 for FILE in $STAGED_FILES; do  
