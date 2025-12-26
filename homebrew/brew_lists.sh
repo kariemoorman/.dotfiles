@@ -1,0 +1,105 @@
+#!/bin/bash
+
+CORE_PACKAGES=(
+      zsh
+      zsh-async
+      zsh-autosuggestions
+      zsh-completions
+      zsh-syntax-highlighting
+      tmux
+      tmux-xpanes
+      tree
+      git
+      git-lfs
+      wget
+)
+
+LANG_PACKAGES=(
+      awscli
+      docker
+      docker-completion
+      go
+      jq
+      openjdk@21
+      pnpm
+      python@3.10
+      python@3.11
+      python@3.13
+      ruby
+      terraform
+      terrascan
+)
+
+TOOL_PACKAGES=(
+      imagemagick
+      grype
+      trivy
+      aircrack-ng
+      nmap
+      sqlmap
+      trufflehog
+      gitleaks
+      hashcat
+      ffmpeg
+      exiftool
+      tesseract
+      tesseract-lang
+      hydra
+      john
+      binwalk
+      fcrackzip
+      hashpump
+      pngcheck
+      netpbm
+      tcpflow
+      tcpreplay
+      tcptrace
+      xpdf
+      pdfalyzer
+      poppler
+      sops
+      snyk
+      gnupg
+)
+
+DB_PACKAGES=(
+      sqlite
+      postgresql
+      pgvector
+      pg_bm25
+      pgcrypto
+      timescaledb
+      redis
+      nginx
+      mongodb-community
+      mongodb-database-tools
+      mongosh
+      mysql
+      mariadb
+      neo4j
+      elasticsearch
+)
+
+CASK_APPS=(
+      audacity
+      brave-browser
+      calibre
+      dbeaver-community
+      drawio
+      eclipse-java
+      firefox
+      jellyfin
+      keepassxc
+      knockknock
+      mullvad-browser
+      mullvad-vpn
+      rancher
+      raspberry-pi-imager
+      rstudio
+      sublime-text
+      tailscale-app
+      utm
+      vlc
+      vscodium
+      wireshark-app
+)
