@@ -1,0 +1,53 @@
+name: "Publish Python Package to Github Release"
+description: "Publish Python package and create Github release"
+
+inputs:
+  release-tag:
+    description: "Release tag for Pypi Package"
+    required: true
+    type: string
+  python-version:
+    description: "Python version"
+    required: true
+    type: string
+    default: "3.12"
+  github-token:
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set Up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Download Test Results
+      uses: actions/download-artifact@v4
+      with:
+        name: pytest-results
+        path: test-results/
+  
+    - name: Ensure Tests Passed
+      run: |
+        # Make sure all tests passed before deploying
+        if grep -q "FAILED" test-results/pytest-output.log; then
+          echo "❌ Tests failed, aborting deployment."
+          exit 1
+        fi
+        echo "✅ Tests passed."
+  
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+        
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ inputs.release-tag }}
+        files: dist/*
+        generate_release_notes: false
+        draft: false

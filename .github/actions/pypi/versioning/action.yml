@@ -1,0 +1,60 @@
+name: "Update Python Package Version"
+description: "Update version of Python package"
+ 
+inputs:
+  version-update:
+    description: "Whether to update version"
+    required: true
+    type: boolean
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: 'main'
+  python-version:
+    description: "Python version"
+    required: true
+    type: string
+    default: "3.12"
+  github-pat:
+    description: 'Personal Access Token for Github'
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository with Versioning
+      id: repo-checkout-versioning
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+        fetch-depth: 0
+
+    - name: Set Up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install toml module
+      run: python -m pip install --upgrade pip toml
+
+    - name: Get package name
+      id: get-name
+      shell: bash
+      run: |
+        python -c "
+        import toml
+        pyproject = toml.load('pyproject.toml')
+        name = pyproject.get('project', {}).get('name')
+        with open('${GITHUB_ENV}', 'w') as f:
+          f.write(f'PACKAGE_NAME={name}\n')
+        "
+
+    - name: Run release-please
+      uses: google-github-actions/release-please-action@v4
+      with:
+        release-type: python
+        package-name: ${{ env.PACKAGE_NAME }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        version-file: VERSION  

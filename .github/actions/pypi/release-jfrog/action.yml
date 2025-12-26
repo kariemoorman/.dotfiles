@@ -1,0 +1,72 @@
+name: "Publish Python Package to JFrog"
+description: "Publish Python package to JFrog"
+
+
+inputs:
+  jf-url:
+    description: 'JFrog URL'
+    required: false
+    type: string
+  jf-oidc-provider:
+    description: 'JFrog OIDC Provider name'
+    required: false
+    type: string
+  jf-project-key:
+    description: 'JFrog Project key'
+    required: false
+    type: string
+  jf-repository:
+    description: 'JFrog PyPi Repository'
+    required: true
+    type: string
+  python-version:
+    description: "Python version"
+    required: true
+    type: string
+    default: "3.12"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set Up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Download Test Results
+      uses: actions/download-artifact@v4
+      with:
+        name: pytest-results
+        path: test-results/
+  
+    - name: Ensure Tests Passed
+      run: |
+        # Make sure all tests passed before deploying
+        if grep -q "FAILED" test-results/pytest-output.log; then
+          echo "❌ Tests failed, aborting deployment."
+          exit 1
+        fi
+        echo "✅ Tests passed."
+  
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Setup JFrog CLI
+      id: setup-jfrog
+      uses: jfrog/setup-jfrog-cli@v4
+      env:
+        JF_URL: ${{ inputs.jf-url }}
+        JF_PROJECT: ${{ inputs.jf-project-key }}
+      with:
+        oidc-provider-name: ${{ inputs.jf-oidc-provider }}
+
+    - name: Publish to JFrog Artifactory
+      id: jfrog-publish
+      shell: bash
+      run: |
+        jf -v
+        jf rt u "dist/*.whl" "${{ inputs.jf-repository }}/" --flat=true
+        echo "✅ Wheel uploaded to JFrog Artifactory"

@@ -1,0 +1,198 @@
+name: "Test Python Package"
+description: "Install and test Python package"
+ 
+inputs:
+  test-filepath:
+    description: 'Filepath to testsets'
+    required: true
+    type: string
+  post-pr-comment:
+    description: "Post scan results back to the PR"
+    required: false
+    type: boolean
+    default: true
+  python-version:
+    description: "Python version"
+    required: true
+    type: string
+    default: "3.12"
+  github-token:
+    description: 'Github token for publishing comment to PR'
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Set Up Python
+      id: python-setup
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Install Python Build Tools
+      id: install-dependencies
+      run: |
+        pip install pytest pytest-cov
+
+    - name: Install PyPi Package
+      id: install-pkg
+      run: |
+        pip install dist/*.whl
+
+    - name: Run Tests on Candidate Branch
+      id: run-tests
+      run: |
+        pytest -v "${{ inputs.test-filepath }}" \
+          --cov \
+          --cov-report=term \
+          --cov-report=xml:coverage.xml \
+          --junitxml=pytest-results.xml \
+          | tee pytest-output.log
+
+        # Check JUnit XML for failures, errors, and total tests
+        read total failed <<< $(python -c "
+        import xml.etree.ElementTree as ET
+        tree = ET.parse('pytest-results.xml')
+        root = tree.getroot()
+        suite = root.find('testsuite') or root
+        total = int(suite.attrib.get('tests', 0))
+        failures = int(suite.attrib.get('failures', 0))
+        errors = int(suite.attrib.get('errors', 0))
+        print(f'{total} {failures + errors}')
+        ")
+
+        echo "Total tests: $total, Failed: $failed"
+
+        if [ "$total" -eq 0 ]; then
+          echo "❌ No tests were found! Please check your test-filepath."
+          exit 1
+        fi
+
+        if [ "$failed" -gt 0 ]; then
+          echo "❌ Some tests failed"
+          exit 1
+        fi
+
+    - name: Extract Coverage Summary
+      id: extract-summary
+      shell: bash
+      run: |
+        set +e
+
+        python <<'EOF'
+        import xml.etree.ElementTree as ET
+        import os
+
+        # ---- Coverage ----
+        try:
+            cov_tree = ET.parse("coverage.xml")
+            cov_root = cov_tree.getroot()
+            coverage = round(float(cov_root.attrib["line-rate"]) * 100, 2)
+            open("coverage.txt", "w").write(str(coverage))
+        except Exception:
+            open("coverage.txt", "w").write("N/A")
+
+        # ---- Pytest results ----
+        try:
+            test_tree = ET.parse("pytest-results.xml")
+            test_root = test_tree.getroot()
+            suite = test_root.find("testsuite") or test_root
+
+            total = int(suite.attrib.get("tests", 0))
+            failures = int(suite.attrib.get("failures", 0))
+            errors = int(suite.attrib.get("errors", 0))
+            skipped = int(suite.attrib.get("skipped", 0))
+            passed = total - failures - errors - skipped
+
+            open("test-summary.txt", "w").write(
+                f"{total},{passed},{failures + errors},{skipped}"
+            )
+        except Exception:
+            open("test-summary.txt", "w").write("N/A,N/A,N/A,N/A")
+        EOF
+
+        coverage=$(cat coverage.txt 2>/dev/null || echo "N/A")
+        IFS=',' read total passed failed skipped < test-summary.txt
+
+        {
+          echo "## 🧪 Test & Coverage Summary"
+          echo ""
+          echo "| Metric | Count |"
+          echo "|------|------:|"
+          echo "| 📄 Total Tests | $total |"
+          echo "| 🟢 Passed | $passed |"
+          echo "| 🔴 Failed | $failed |"
+          echo "| ⚪ Skipped | $skipped |"
+          echo "| 📈 Line Coverage | ${coverage}% |"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload Test Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest-results
+        path: |
+          pytest-results.xml
+          pytest-output.log
+          coverage.xml
+          coverage.txt
+          test-summary.txt
+        retention-days: 7
+
+    - name: Post Coverage & Test Summary as PR Comment
+      if: github.event_name == 'pull_request' && inputs.post-pr-comment
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+
+          function safeRead(path, fallback) {
+            try {
+              return fs.readFileSync(path, 'utf8').trim();
+            } catch {
+              return fallback;
+            }
+          }
+
+          const coverage = safeRead('coverage.txt', 'N/A');
+          const summary = safeRead('test-summary.txt', 'N/A,N/A,N/A,N/A')
+            .split(',');
+
+          const [total, passed, failed, skipped] = summary;
+
+          const body = `
+          ### 🧪 Test & Coverage Report
+
+          **Total line coverage:** **${coverage}%**
+
+          | Metric | Count |
+          |------|------:|
+          | 📄 Total Tests | ${total} |
+          | 🟢 Passed | ${passed} |
+          | 🔴 Failed | ${failed} |
+          | ⚪ Skipped | ${skipped} |
+
+          📦 Built from wheel  
+          🧪 Tests: \`${{ inputs.test-filepath }}\`
+          `.trim();
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          });
