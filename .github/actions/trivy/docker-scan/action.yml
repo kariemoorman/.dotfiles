@@ -1,0 +1,129 @@
+name: "Trivy Container Security Scan"
+description: "Scan Docker image and container for vulnerabilities using Trivy"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  image-name:
+    description: 'Name of Docker Image'
+    required: true
+    type: string
+  dockerfile-path:
+    description: "Filepath to Dockerfile"
+    required: false
+    type: string
+    default: "./Dockerfile"
+  context-path:
+    description: "Directory to send to the Docker daemon"
+    required: false
+    type: string
+    default: "./"
+  fail_on_critical:
+    description: 'Fail workflow if critical vulnerabilities are found'
+    required: false
+    type: boolean
+    default: true
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+        
+    - name: Install Trivy
+      id: trivy-install
+      shell: bash
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.68.1
+
+    - name: Build Docker Image
+      id: docker-build
+      shell: bash
+      run: |
+        docker build \
+          -t ${{ inputs.image-name }} \
+          -f "${{ inputs.dockerfile-path }}" \
+          "${{ inputs.context-path }}"
+
+    - name: Trivy Image Scan
+      id: trivy-image-scan
+      shell: bash
+      run: |
+        trivy image --format json \
+          --output trivy-image-report.json \
+          --severity HIGH,CRITICAL \
+          ${{ inputs.image-name }}
+
+        echo "image_scan_path=trivy-image-report.json" >> $GITHUB_OUTPUT
+
+    - name: Fail on critical issues
+      id: failure-count
+      if: ${{ inputs.fail_on_critical == true }}
+      shell: bash
+      run: |
+        CRIT_COUNT=$(jq '.Results[].Vulnerabilities | map(select(.Severity=="CRITICAL")) | length' trivy-image-report.json | paste -sd+ - | bc)
+        
+        echo "Critical vulnerabilities found: $CRIT_COUNT"
+
+        if [ "$CRIT_COUNT" -gt 0 ]; then
+          echo "❌ Critical vulnerabilities detected!"
+          exit 1
+        fi
+
+    - name: Post Trivy results to PR
+      id: post-pr-comment
+      if: ${{ github.event.pull_request && inputs.post_pr_comment == true }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+    
+          // Load both reports if available
+          const imageReport = JSON.parse(fs.readFileSync('trivy-image-report.json', 'utf8'));
+    
+          const extractVulns = (report) =>
+            report.Results?.flatMap(r => r.Vulnerabilities || []) || [];
+    
+          const imageVulns = extractVulns(imageReport);
+    
+          let total = imageVulns.length ;
+    
+          let body = "## 🛡️ Trivy Security Scan Results\n\n";
+    
+          if (total === 0) {
+            body += "✅ **No vulnerabilities found in image or container.**";
+          } else {
+            body += `⚠️ **Total Vulnerabilities: ${total}**\n\n`;
+    
+            const top = [...imageVulns ].slice(0, 20);
+    
+            for (const v of top) {
+              body += `• **${v.Severity}** — ${v.VulnerabilityID}: ${v.Title}\n`;
+            }
+    
+            if (total > 20) {
+              body += `\n… and more. See full results in workflow artifacts.`;
+            }
+          }
+    
+          await github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body
+          });

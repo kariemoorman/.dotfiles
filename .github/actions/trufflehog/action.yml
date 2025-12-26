@@ -1,0 +1,92 @@
+name: "TruffleHog Secret Scan"
+description: "Detects secrets and sensitive data in a repository and commit history using TruffleHog."
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: ${{ github.ref }}
+  path:
+    description: 'Directory to scan'
+    required: false
+    type: string
+    default: '.'
+  pattern_filter:
+    description: "Optional regex to filter results"
+    required: false
+    type: string
+  fail_on_findings:
+    description: "Fail workflow if secrets are detected?"
+    required: true
+    type: boolean
+    default: true
+    
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Install TruffleHog
+      id: th-install
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+        trufflehog --version 
+        
+    - name: Run TruffleHog Scan
+      id: secrets-scan
+      shell: bash
+      run: |
+        cp "${{ github.action_path }}/config.yml" /tmp/trufflehog-config.yml
+        SCAN_PATH='.'
+        PATTERN_FILTER="${{ inputs.pattern_filter }}"
+    
+        echo "Running TruffleHog scan on $SCAN_PATH..."
+    
+        # Run filesystem scan
+        trufflehog filesystem "$SCAN_PATH" \
+            --config="/tmp/trufflehog-config.yml" \
+            --allow-verification-overlap \
+            --json > trufflehog-results.json
+    
+        # Optional pattern filter (keep full JSON for artifact)
+        if [[ -n "$PATTERN_FILTER" && "$PATTERN_FILTER" != "false" ]]; then
+          jq -c "select((.reason // \"\") | test(\"$PATTERN_FILTER\"))" trufflehog-results.json > filtered.json
+          mv filtered.json trufflehog-results.json
+        fi
+    
+        # Prepare redacted JSON for GitHub summary (handle JSONL safely)
+        jq -c 'select((.SourceMetadata.Data.Filesystem.file // "") | test("^\\.git/*|trufflehog-results.json") | not)
+               | . + {
+                   Raw: (if (.Raw // "") | length > 10 then ((.Raw // "")[0:6] + "***" + (.Raw // "")[-4:]) else (.Raw // "") end)
+                 }' trufflehog-results.json > trufflehog-results-redacted.json
+    
+        # Print human-readable summary
+        jq -r '. | 
+          "File: \(.SourceMetadata.Data.Filesystem.file // "N/A")\n  Line: \(.SourceMetadata.Data.Filesystem.line // "N/A")\n  Detector: \(.DetectorName // "unknown")\n  Secret: \(.Raw // "N/A")\n"' \
+          trufflehog-results-redacted.json
+
+    - name: Upload scan results
+      id: upload-scan
+      uses: actions/upload-artifact@v4
+      with:
+        name: trufflehog-results
+        path: trufflehog-results-redacted.json
+        retention-days: 7
+
+    - name: Fail workflow if secrets found
+      id: scan-status
+      if: ${{ inputs.fail_on_findings != 'false' }}
+      shell: bash
+      run: |
+        if [ -s trufflehog-results-redacted.json ] && [ "$(jq 'length' trufflehog-results-redacted.json)" -gt 0 ]; then
+          echo "❌ TruffleHog found potential secrets!"
+          exit 1
+        else
+          echo "✅ No secrets detected."
+        fi

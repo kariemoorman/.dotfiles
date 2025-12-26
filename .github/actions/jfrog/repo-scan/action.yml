@@ -1,0 +1,88 @@
+name: "JFrog Repository Scan"
+description: "Scan repository for vulnerabilities and secrets using JFrog CLI"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: ${{ github.ref }}
+  path:
+    description: 'Directory to scan'
+    required: false
+    type: string
+    default: '.'
+  fail_on_critical:
+    description: 'Fail workflow if critical vulnerabilities are found'
+    required: false
+    type: boolean
+    default: true
+  fail_on_secrets:
+    description: 'Fail workflow if secrets are found'
+    required: false
+    type: boolean
+    default: true
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  jf-url:
+    description: 'JFrog URL'
+    required: true
+    type: string
+  jf-oidc-provider:
+    description: 'JFrog OIDC Provider name'
+    required: true
+    type: string
+  jf-project-key:
+    description: 'JFrog Project key'
+    required: false
+    type: string
+  github-token:
+    description: 'Github token for publishing comment to PR'
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Setup JFrog CLI
+      id: setup-jfrog
+      uses: jfrog/setup-jfrog-cli@v4
+      env:
+          JF_URL: ${{ inputs.jf-url }}
+      with:
+          oidc-provider-name: ${{ inputs.jf-oidc-provider }}
+
+    - name: Run Local Vulnerability Scan
+      id: jfrog-vuln-scan
+      uses: jfrog/frogbot@v2
+      env:
+        JF_URL: ${{ inputs.jf-url }}
+        JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ## ----- OPTIONAL (if not using frogbot-config.yml) ------ ##
+        # JF_INSTALL_DEPS_CMD: ""
+        # JF_WORKING_DIR: path/to/project/dir
+        # JF_PATH_EXCLUSIONS: "*git*;*node_modules*;*target*;*venv*;*test*"
+        # JF_WATCHES: <watch-1>,<watch-2>...<watch-n>
+        JF_PROJECT: ${{ inputs.jf-project-key }}
+        # JF_INCLUDE_ALL_VULNERABILITIES: "TRUE"
+        # JF_AVOID_PREVIOUS_PR_COMMENTS_DELETION: "TRUE"
+        JF_FAIL: "TRUE"
+        # JF_DEPS_REPO: ""
+        # JF_GIT_AGGREGATE_FIXES: "FALSE"
+        # JF_FIXABLE_ONLY: "TRUE"
+        JF_MIN_SEVERITY: "MEDIUM"
+        # JF_EMAIL_RECEIVERS: ""
+        # JF_ALLOWED_LICENSES: "MIT, Apache-2.0"
+        JF_AVOID_EXTRA_MESSAGES: "TRUE"
+        # JF_PR_COMMENT_TITLE: ""
+      with:
+        oidc-provider-name: ${{ inputs.jf-oidc-provider }}

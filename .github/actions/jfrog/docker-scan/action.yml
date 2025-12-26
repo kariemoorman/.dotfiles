@@ -1,0 +1,238 @@
+name: "JFrog Docker Image Scan"
+description: "Build and scan a Docker image for vulnerabilities using JFrog CLI and optionally post results to PR"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: 'main'
+  image-name:
+    description: 'Docker image name (e.g., my-app:latest)'
+    required: true
+    type: string
+  dockerfile-path:
+    description: 'Path to the Dockerfile'
+    required: false
+    type: string
+    default: './Dockerfile'
+  context-path:
+    description: 'Build context path for Docker'
+    required: false
+    type: string
+    default: '.'
+  fail-on-critical:
+    description: 'Fail workflow if critical vulnerabilities are found'
+    required: false
+    type: boolean
+    default: true
+  post-pr-comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  jf-url:
+    description: 'JFrog URL'
+    required: true
+    type: string
+  jf-oidc-provider:
+    description: 'JFrog OIDC Provider name'
+    required: true
+    type: string
+  jf-project-key:
+    description: 'JFrog Project key'
+    required: false
+    type: string
+  github-token:
+    description: 'GitHub token for posting comments'
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Setup JFrog CLI
+      id: setup-jfrog
+      uses: jfrog/setup-jfrog-cli@v4
+      env:
+          JF_URL: ${{ inputs.jf-url }}
+      with:
+          oidc-provider-name: ${{ inputs.jf-oidc-provider }}
+
+    - name: Build Docker Image
+      id: docker-build
+      shell: bash
+      run: |
+        if [ -f docker-compose.yml ]; then
+            echo "docker-compose.yml found. Using docker compose..."
+            docker compose build --no-cache
+        else
+            echo "docker-compose.yml not found. Using docker build..."
+            docker build \
+            -t ${{ inputs.image-name }} \
+            -f "${{ inputs.dockerfile-path }}" \
+            "${{ inputs.context-path }}"
+        fi
+
+    - name: Scan Docker Image
+      id: docker-scan
+      shell: bash
+      run: |
+          set -euo pipefail
+          echo "Scanning Docker image ${{ inputs.image-name }} for vulnerabilities..."
+          jf docker scan ${{ inputs.image-name }} --format=json > docker-scan-results.json
+
+          HIGH_CRITICAL_COUNT=$(jq '
+            [ .[]
+              | .vulnerabilities[]
+              | select(.severity == "High" or .severity == "Critical")
+            ] | length
+          ' docker-scan-results.json)
+
+          echo "High/Critical vulnerabilities found: ${HIGH_CRITICAL_COUNT}"
+
+          if [ "${{ inputs.fail-on-critical }}" = "true" ] && [ "${HIGH_CRITICAL_COUNT}" -gt 0 ]; then
+            echo "Failing workflow due to High or Critical vulnerabilities."
+            exit 1
+          fi
+ 
+          # -----------------------------
+          # Build severity/fixability table
+          # -----------------------------
+          SUMMARY_JSON=$(jq '
+            .[]
+            | .vulnerabilities
+            | group_by(.severity)
+            | map({
+                severity: .[0].severity,
+                total: length,
+                fixable: (
+                  map(
+                    select(
+                      any(.components[]; .fixed_versions? | length > 0)
+                    )
+                  ) | length
+                ),
+              non_fixable: (
+                (length - (map(select(any(.components[]; .fixed_versions? | length > 0))) | length)) | if . < 0 then 0 else . end
+              )
+            })
+            | sort_by(
+                if .severity == "Critical" then 0
+                elif .severity == "High" then 1
+                elif .severity == "Medium" then 2
+                elif .severity == "Low" then 3
+                else 4 end
+              )
+          ' docker-scan-results.json)
+  
+          # -----------------------------
+          # Write GitHub Actions Summary
+          # -----------------------------
+          {
+            echo "## 🛡️ JFrog Docker Scan Summary"
+            echo ""
+            echo "| Severity | Total | Fixable | Non-fixable |"
+            echo "|----------|-------|---------|-------------|"
+  
+            echo "$SUMMARY_JSON" | jq -r '
+              .[] |
+              "| \(.severity) | \(.total) | \(.fixable) | \(.non_fixable) |"
+            '
+          } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload Docker Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-scan-results-${{ inputs.image-name }}
+        path: |
+          docker-scan-results.json
+
+    - name: Post Docker Scan Results as PR Comment
+      id: post-pr-comment
+      if: github.event_name == 'pull_request' && inputs.post-pr-comment
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+
+          let scanJson;
+          try {
+            scanJson = JSON.parse(fs.readFileSync('docker-scan-results.json', 'utf8'));
+          } catch (err) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: '❌ Unable to read docker-scan-results.json'
+            });
+            return;
+          }
+
+          // Emoji + ordering per severity
+          const severityConfig = {
+            Critical: { order: 0, emoji: '🔴' },
+            High:     { order: 1, emoji: '🟠' },
+            Medium:   { order: 2, emoji: '🟡' },
+            Low:      { order: 3, emoji: '🟢' },
+            Unknown:  { order: 4, emoji: '⚪' }
+          };
+
+          // Flatten vulnerabilities
+          const vulnerabilities = scanJson.flatMap(r => r.vulnerabilities || []);
+
+          // Aggregate by severity
+          const summary = {};
+
+          for (const v of vulnerabilities) {
+            const sev = v.severity || 'Unknown';
+            summary[sev] ??= { total: 0, fixable: 0 };
+
+            summary[sev].total++;
+
+            // Check if the vulnerability is fixable (any component has fixed_versions)
+            const hasFix = v.components && Object.values(v.components).some(
+              c => Array.isArray(c.fixed_versions) && c.fixed_versions.length > 0
+            );
+
+            if (hasFix) summary[sev].fixable++;
+          }
+
+          // Build markdown table
+          let table = `
+          | Severity | Total | Fixable | Non-fixable |
+          |----------|-------|---------|-------------|
+          `;
+
+                Object.entries(summary)
+                  .sort((a, b) =>
+                    (severityConfig[a[0]]?.order ?? 99) -
+                    (severityConfig[b[0]]?.order ?? 99)
+                  )
+                  .forEach(([sev, data]) => {
+                    const emoji = severityConfig[sev]?.emoji ?? '⚪';
+                    const nonFixable = Math.max(0, data.total - data.fixable);
+                    table += `| ${emoji} ${sev} | ${data.total} | ${data.fixable} | ${nonFixable} |\n`;
+                  });
+
+                const body = `
+          ## 🛡️ JFrog Docker Scan Summary
+          **Image:** \`${{ inputs.image-name }}\`
+
+          ${table}
+          `;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          });

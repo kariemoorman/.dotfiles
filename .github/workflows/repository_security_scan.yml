@@ -1,0 +1,217 @@
+name: "Repository Vulnerability Scan Reusable Workflow"
+description: "Scan repository for vulnerabilities and secrets"
+
+on:
+  workflow_call:
+    inputs:
+      run_owasp_scan:
+        description: "Whether to run OWASP scan"
+        required: true
+        type: boolean
+      run_trivy_scan:
+        description: "Whether to run Trivy scan"
+        required: true
+        type: boolean
+      run_trufflehog_scan:
+        description: "Whether to run Trufflehog scan"
+        required: true
+        type: boolean
+      run_snyk_scan:
+        description: "Whether to run Snyk scan"
+        required: false
+        type: boolean
+      run_jfrog_scan:
+        description: "Whether to run JFrog CLI scan"
+        required: false
+        type: boolean
+      run_codeql_scan:
+        description: "Whether to run CodeQL scan"
+        required: false
+        type: boolean
+      codeql_languages:
+        description: 'Comma-separated list of programming languages to scan'
+        required: false
+        type: string
+      ref:
+        description: 'Git ref to scan'
+        required: false
+        type: string
+      directory_path:
+        description: 'Directory to scan'
+        required: false
+        type: string
+        default: '.'
+      fail_on_critical:
+        description: 'Fail workflow if critical vulnerabilities are found?'
+        required: false
+        type: boolean
+        default: true
+      fail_on_secrets:
+        description: 'Fail workflow if secrets are found?'
+        required: false
+        type: boolean
+        default: true
+      post_pr_comment:
+        description: 'Post scan results as a PR comment?'
+        required: false
+        type: boolean
+        default: true
+      snyk_severity_threshold:
+        description: "Fail if vulnerabilities at or above this severity exist (low|medium|high|critical)"
+        required: false
+        type: string
+        default: "high"
+      th_pattern_filter:
+        description: "Optional regex to filter results (leave blank for all)"
+        required: false
+        type: string
+      owasp_format:
+        description: "Report format (XML, HTML, JSON, ALL)"
+        required: false
+        type: string
+        default: "ALL"
+      owasp_project_name:
+        description: "Project name"
+        required: false
+        type: string
+        default: "my-project"
+      jf-url:
+        description: 'JFrog URL'
+        required: false
+        type: string
+      jf-oidc-provider:
+        description: 'JFrog OIDC Provider name'
+        required: false
+        type: string
+      jf-project-key:
+        description: 'JFrog Project key'
+        required: false
+        type: string
+    
+    secrets:
+      github-token:
+        required: true
+      snyk-token:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  trufflehog-scan:
+    if: ${{ inputs.run_trufflehog_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trufflehog Scan
+        id: trufflehog-scan
+        uses: kariemoorman/.dotfiles/.github/actions/trufflehog@main
+        with:
+          path: ${{ inputs.directory_path }}
+          ref: ${{ inputs.ref }}
+          pattern_filter: ${{ inputs.th_pattern_filter }}
+          fail_on_findings: ${{ inputs.fail_on_secrets }}
+
+  trivy-scan:
+    if: ${{ inputs.run_trivy_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy Scan
+        id: trivy-scan
+        uses: kariemoorman/.dotfiles/.github/actions/trivy/repo-scan@main
+        with:
+          path: ${{ inputs.directory_path }}
+          ref: ${{ inputs.ref }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+          
+  owasp-scan:
+    if: ${{ inputs.run_owasp_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run OWASP Scan
+        id: owasp-scan
+        uses: kariemoorman/.dotfiles/.github/actions/owasp/repo-scan@main
+        with:
+          path: ${{ inputs.directory_path }}
+          ref: ${{ inputs.ref }}
+          format: ${{ inputs.owasp_format }}
+          project_name: ${{ inputs.owasp_project_name }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+
+  jfrog-scan:
+    if: ${{ inputs.run_jfrog_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run JFrog CLI Scan
+        id: jfrog-cli-scan
+        uses: kariemoorman/.dotfiles/.github/actions/jfrog/repo-scan@main
+        with:
+          path: ${{ inputs.directory_path }}
+          ref: ${{ inputs.ref }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          fail_on_secrets: ${{ inputs.fail_on_secrets }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          jf-url: ${{ inputs.jf-url }}
+          jf-oidc-provider: ${{ inputs.jf-oidc-provider }}
+          jf-project-key: ${{ inputs.jf-project-key }}
+          github-token: ${{ secrets.github-token }}
+
+  snyk-scan:
+    if: ${{ inputs.run_snyk_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Snyk Scan
+        id: snyk-scan
+        uses: kariemoorman/.dotfiles/.github/actions/snyk/repo-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          severity-threshold: ${{ inputs.snyk_severity_threshold }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          snyk-token: ${{ secrets.snyk-token }}
+          github-token: ${{ secrets.github-token }}
+
+  codeql-prepare-matrix:
+    if: ${{ inputs.run_codeql_scan == true }}
+    runs-on: ubuntu-latest
+    outputs:
+      languages-matrix: ${{ steps.set-languages.outputs.languages }}
+    steps:
+      - name: Convert languages to JSON array
+        id: set-languages
+        run: |
+          LANG_ARRAY=$(echo "${{ inputs.codeql_languages }}" | tr -d ' ' | tr ',' '","')
+          echo "languages=[\"$LANG_ARRAY\"]" >> $GITHUB_OUTPUT
+
+  codeql-scan:
+    if: ${{ inputs.run_codeql_scan == true }}
+    needs: codeql-prepare-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: ${{ fromJSON(needs.prepare-matrix.outputs.languages-matrix) }}
+    steps:
+      - name: Debug language
+        run: |
+          echo "Scanning language: ${{ matrix.language }}"
+
+      - name: CodeQL Scan
+        id: codeql-scan
+        uses: kariemoorman/.dotfiles/.github/actions/codeql@main
+        with: 
+          ref: ${{ inputs.ref }}
+          language: ${{ matrix.language }}
+
+  aggregate-codeql-results:
+    if: ${{ inputs.run_codeql_scan == true }}
+    runs-on: ubuntu-latest
+    needs: codeql-scan
+    steps:
+      - name: Aggregate CodeQL Results
+        uses: kariemoorman/.dotfiles/.github/actions/codeql-aggregate@main
+        with:
+          post-pr-comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}

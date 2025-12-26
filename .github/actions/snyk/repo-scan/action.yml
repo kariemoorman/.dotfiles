@@ -1,0 +1,113 @@
+name: "Snyk Code Scan"
+description: "Scan your repository for code vulnerabilities using Snyk CLI and optionally post results to PR"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: ${{ github.ref }}
+  severity-threshold:
+    description: "Fail if vulnerabilities at or above this severity exist (low|medium|high|critical)"
+    required: false
+    type: string
+    default: "high"
+  post_pr_comment:
+    description: "Post scan results back to the PR"
+    required: false
+    type: boolean
+    default: true
+  snyk-token:
+    description: "Snyk API token (required for free accounts or non-Enterprise OIDC)"
+    required: true
+    type: string
+  github-token:
+    description: "GitHub token for PR comments"
+    type: boolean
+    required: true
+    
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Install Snyk CLI
+      id: snyk-install
+      run: |
+        curl -sL https://downloads.snyk.io/cli/latest/snyk-linux -o snyk
+        chmod +x snyk
+        sudo mv snyk /usr/local/bin/snyk
+      shell: bash
+
+    - name: Authenticate Snyk CLI
+      id: snyk-auth
+      run: snyk auth "${{ inputs.snyk-token }}"
+      shell: bash
+
+    - name: Run Snyk Code Scan
+      id: snyk-code
+      run: |
+        echo "Scanning repository for code vulnerabilities"
+
+        # JSON output
+        snyk code test --json > snyk-code-results.json || true
+
+        # Human-readable output
+        snyk code test > snyk-code-results.txt || true
+
+        # Count vulnerabilities above severity threshold
+        COUNT=$(jq "[.issues[]? | select(.severity==\"${{ inputs.severity-threshold }}\")] | length" snyk-code-results.json)
+        echo "vuln-count=$COUNT" >> $GITHUB_OUTPUT
+
+        # Fail if any issues above threshold
+        if [ "$COUNT" -gt 0 ]; then
+          echo "Vulnerabilities found exceeding threshold '${{ inputs.severity-threshold }}'. Failing."
+          exit 1
+        fi
+      shell: bash
+
+    - name: Upload Snyk Code Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: snyk-code-results
+        path: |
+          snyk-code-results.json
+          snyk-code-results.txt
+        retention-days: 7
+
+    - name: Comment PR with Snyk Code Results
+      id: post-pr-comment
+      if: ${{ inputs.post_pr_comment == true && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("fs");
+
+          const maxLength = 45000;
+          let results = "No Snyk scan results found.";
+
+          try {
+            results = fs.readFileSync("snyk-code-results.txt", "utf8");
+          } catch (e) {}
+
+          if (results.length > maxLength) {
+            results = results.slice(0, maxLength) + "\n...[truncated]";
+          }
+
+          const body = `### 🔍 Snyk Code Scan Results
+          \\`\\`\\`
+          ${results}
+          \\`\\`\\`
+          `;
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          })

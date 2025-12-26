@@ -1,0 +1,102 @@
+name: "OWASP Dependency-Check"
+description: "Run OWASP Dependency-Check scan"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: ${{ github.ref }}
+  path:
+    description: "Directory to scan"
+    required: false
+    type: string
+    default: "."
+  format:
+    description: "Report format (XML, HTML, JSON, ALL)"
+    required: false
+    type: string
+    default: "HTML"
+  project_name:
+    description: "Project name"
+    required: false
+    type: string
+    default: "my-project"
+  post_pr_comment:
+    description: "Post scan results back to the PR"
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+  
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Run OWASP Dependency-Check
+      id: owasp-dependency-check
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        path: ${{ inputs.path }}
+        format: ${{ inputs.format }}
+        project: ${{ inputs.project_name }}
+        args: >
+            --format ${{ inputs.format }}
+            --failOnCVSS 7
+            --enableRetired
+
+    - name: Upload Dependency-Check Reports
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-check-reports
+        path: ${{github.workspace}}/reports
+        retention-days: 7
+        
+    - name: Comment PR with Dependency-Check Results
+      id: post-pr-comment
+      if: ${{ github.event_name == 'pull_request' && inputs.post_pr_comment == true }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("fs");
+          const maxLength = 45000;
+
+          // Try reading JSON or fallback to HTML
+          let results = "No dependency check report found.";
+          const jsonReport = "reports/dependency-check-report.json";
+          const htmlReport = "reports/dependency-check-report.html";
+
+          if (fs.existsSync(jsonReport)) {
+            results = fs.readFileSync(jsonReport, "utf8");
+          } else if (fs.existsSync(htmlReport)) {
+            results = fs.readFileSync(htmlReport, "utf8")
+              .replace(/<[^>]+>/g, '') // strip HTML tags
+              .slice(0, maxLength);
+          }
+
+          if (results.length > maxLength) {
+            results = results.substring(0, maxLength) + "\n...[truncated]";
+          }
+
+          const body = `### 🔍 OWASP Dependency-Check Results
+          \\`\\`\\`
+          ${results}
+          \\`\\`\\`
+          `;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          });

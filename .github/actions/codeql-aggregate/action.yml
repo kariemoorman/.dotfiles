@@ -1,0 +1,58 @@
+name: "Aggregate CodeQL Results"
+description: "Download and combine CodeQL results artifacts, then optionally post as PR comment"
+
+inputs:
+  post-pr-comment:
+    description: 'Whether to post combined results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: 'GitHub token for posting comments'
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download all CodeQL results
+      id: download-results
+      uses: actions/download-artifact@v4
+      with:
+        path: ./codeql-aggregate
+
+    - name: Combine results
+      id: combine-results
+      run: |
+        mkdir -p ./codeql-merged
+        cat ./codeql-aggregate/*/*.txt > ./codeql-merged/combined-codeql-results.txt || true
+
+    - name: Post combined results as PR comment
+      id: post-pr-comment
+      if: ${{ inputs.post-pr-comment }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const maxLength = 50000;
+          let results = '';
+
+          try {
+            results = fs.readFileSync('./codeql-merged/combined-codeql-results.txt', 'utf8');
+          } catch (err) {
+            results = 'No CodeQL results found.';
+          }
+
+          if (results.length > maxLength) {
+            results = results.slice(0, maxLength) + "\n...[truncated]";
+          }
+
+          const commentBody = `### CodeQL Scan Results (all languages)\n\`\`\`\n${results}\n\`\`\``;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body: commentBody
+          });

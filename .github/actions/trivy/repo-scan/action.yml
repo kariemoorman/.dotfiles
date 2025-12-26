@@ -1,0 +1,98 @@
+name: "Trivy Security Scan"
+description: "Scan repository for vulnerabilities using Trivy"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  path:
+    description: 'Directory to scan'
+    required: false
+    type: string
+    default: '.'
+  fail_on_critical:
+    description: 'Fail workflow if critical vulnerabilities are found'
+    required: false
+    type: boolean
+    default: true
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+        
+    - name: Run Trivy vulnerability scanner in fs mode
+      id: trivy-scan
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: 'fs'
+        scan-ref: ${{ inputs.path }}
+        output: trivy-report.json
+        format: json
+        exit-code: 0
+
+    - name: Upload Vulnerability Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-report
+        path: trivy-report.json
+        retention-days: 7
+
+    - name: Fail build on High/Criticial Vulnerabilities
+      id: scan-status
+      if: ${{ inputs.fail_on_critical == true }}
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: "fs"
+        format: table
+        scan-ref: .
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: 1
+        skip-setup-trivy: true
+
+    - name: Post Trivy results to PR
+      id: post-pr-comment
+      if: ${{ github.event.pull_request && inputs.post_pr_comment == true }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('trivy-report.json', 'utf8'));
+    
+          let findings = report.Results?.flatMap(r => r.Vulnerabilities || []) || [];
+    
+          if (findings.length === 0) {
+            body = "✅ **Trivy Scan: No vulnerabilities found.**";
+          } else {
+            body = `⚠️ **Trivy found ${findings.length} vulnerabilities**\n\n`;
+            for (const v of findings.slice(0, 20)) {
+              body += `• **${v.Severity}** — ${v.VulnerabilityID}: ${v.Title}\n`;
+            }
+            if (findings.length > 20) {
+              body += `\n… and more. See full report in workflow artifacts.`;
+            }
+          }
+    
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body
+          });

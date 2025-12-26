@@ -1,0 +1,181 @@
+name: "Docker Container Security Scan Reusable Workflow"
+description: "Container security scan for Docker images"
+
+on:
+  workflow_call:
+    inputs:
+      run_trivy_scan:
+        description: "Whether to run Trivy scan"
+        required: true
+        type: boolean
+        default: true
+      run_snyk_scan:
+        description: "Whether to run Snyk scan"
+        required: true
+        type: boolean
+        default: true
+      run_owasp_scan:
+        description: "Whether to run OWASP scan"
+        required: true
+        type: boolean
+        default: true
+      run_grype_scan:
+        description: "Whether to run Grype scan"
+        required: true
+        type: boolean
+        default: false
+      run_jfrog_scan:
+        description: "Whether to run JFrog scan"
+        required: true
+        type: boolean
+        default: false
+      ref:
+        description: 'Git ref to scan'
+        required: false
+        type: string
+        default: 'main'
+      image-name:
+        description: 'Name of Docker Image'
+        required: true
+        type: string
+      dockerfile-path:
+        description: "Filepath to Dockerfile"
+        required: false
+        type: string
+        default: "./Dockerfile"
+      context-path:
+        description: "Directory to send to the Docker daemon"
+        required: false
+        type: string
+        default: "."
+      post-pr-comment:
+        description: "Whether to post results as PR comment"
+        required: false
+        type: boolean
+        default: true
+      scan-type:
+        description: "Type of ZAP scan: 'baseline' or 'full'"
+        required: true
+        type: string
+        default: "baseline"
+      snyk-severity-threshold:
+        description: "Severity threshold for Snyk scan"
+        required: false
+        type: string
+        default: "high"
+      fail-on-critical:
+        description: "Whether to fail on detected critical vulnerability"
+        required: false
+        type: boolean
+        default: true
+      jf-url:
+        description: 'JFrog URL'
+        required: false
+        type: string
+      jf-oidc-provider:
+        description: 'JFrog OIDC Provider name'
+        required: false
+        type: string
+      jf-project-key:
+        description: 'JFrog Project key'
+        required: false
+        type: string
+      docker-build-run-cmd:
+        description: "Manual command for building Docker image and running Docker container"
+        required: false 
+        type: string
+      docker-stop-rm-cmd:
+        description: "Manual command for stopping Docker container and removing Docker image"
+        required: false
+        type: string
+
+    secrets:
+      github-token:
+        required: true
+      snyk-token:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  snyk-scan:
+    if: ${{ inputs.run_snyk_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Snyk Container Scan
+        uses: kariemoorman/.dotfiles/.github/actions/snyk/docker-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          image-name: ${{ inputs.image-name }}
+          dockerfile-path: ${{ inputs.dockerfile-path }}
+          context-path: ${{ inputs.context-path }}
+          severity-threshold: ${{ inputs.snyk-severity-threshold }}
+          post-pr-comment: ${{ inputs.post-pr-comment }}
+          snyk-token: ${{ secrets.snyk-token }}
+          github-token: ${{ secrets.github-token }}
+
+  trivy-scan:
+    if: ${{ inputs.run_trivy_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy Scan
+        id: trivy-scan
+        uses: kariemoorman/.dotfiles/.github/actions/trivy/docker-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+        
+  jfrog-scan:
+    if: ${{ inputs.run_jfrog_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run JFrog Docker Scan
+        uses: kariemoorman/.dotfiles/.github/actions/jfrog/docker-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          image-name: ${{ inputs.image-name }}
+          dockerfile-path: ${{ inputs.dockerfile-path }}
+          context-path: ${{ inputs.context-path }}
+          fail-on-critical: ${{ inputs.fail-on-critical }}
+          post-pr-comment: ${{ inputs.post-pr-comment }}
+          jf-url: ${{ inputs.jf-url }}
+          jf-oidc-provider: ${{ inputs.jf-oidc-provider }}
+          jf-project-key: ${{ inputs.jf-project-key }}
+          github-token: ${{ secrets.github-token }}
+
+  owasp-scan:
+    if: ${{ inputs.run_owasp_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run OWASP Docker Scan
+        uses: kariemoorman/.dotfiles/.github/actions/owasp/docker-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          image-name: ${{ inputs.image-name }}
+          dockerfile-path: ${{ inputs.dockerfile-path }}
+          context-path: ${{ inputs.context-path }}
+          scan-type: ${{ inputs.scan-type }}
+          docker-build-run-cmd: ${{ inputs.docker-build-run-cmd }}
+          docker-stop-rm-cmd: ${{ inputs.docker-stop-rm-cmd }}
+          post-pr-comment: ${{ inputs.post-pr-comment }}
+          github-token: ${{ secrets.github-token }}
+
+  grype-scan:
+    if: ${{ inputs.run_grype_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run OWASP Docker Scan
+        uses: kariemoorman/.dotfiles/.github/actions/grype/docker-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          image-name: ${{ inputs.image-name }}
+          dockerfile-path: ${{ inputs.dockerfile-path }}
+          context-path: ${{ inputs.context-path }}
+          fail-on-critical: ${{ inputs.fail-on-critical }}
+          post-pr-comment: ${{ inputs.post-pr-comment }}
+          github-token: ${{ secrets.github-token }}

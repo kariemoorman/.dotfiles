@@ -1,0 +1,150 @@
+name: "Snyk Container Scan"
+description: "Build and scan a Docker image for vulnerabilities using Snyk CLI and optionally post results to PR"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: 'main'
+  image-name:
+    description: "Docker image name (e.g., my-app:latest)"
+    required: true
+    type: string
+  dockerfile-path:
+    description: "Path to the Dockerfile"
+    required: false
+    type: string
+    default: "./Dockerfile"
+  context-path:
+    description: "Docker build context path"
+    required: false
+    type: string
+    default: "."
+  severity-threshold:
+    description: "Fail if vulnerabilities at or above this severity exist (low|medium|high|critical)"
+    required: false
+    type: string
+    default: "high"
+  post-pr-comment:
+    description: "Post scan results back to the PR"
+    required: false
+    type: boolean
+    default: true
+  snyk-token:
+    description: "Snyk API token"
+    required: true
+    type: string
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Install Snyk CLI
+      shell: bash
+      run: |
+        curl -sL https://downloads.snyk.io/cli/latest/snyk-linux -o snyk
+        chmod +x snyk
+        sudo mv snyk /usr/local/bin/snyk
+
+    - name: Authenticate Snyk CLI
+      shell: bash
+      run: snyk auth "${{ inputs.snyk-token }}"
+
+    - name: Scan Docker Base Image & Build
+      id: snyk-base-image-scan
+      shell: bash
+      run: |
+        snyk test --docker python:3.12-alpine3.22 --file=${{ inputs.dockerfile-path }} --severity-threshold="${{ inputs.severity-threshold }}"
+
+    - name: Build Docker Image
+      id: docker-build
+      shell: bash
+      run: |
+        if [ -f docker-compose.yml ]; then
+            echo "docker-compose.yml found. Using docker compose..."
+            docker compose build --no-cache
+        else
+            echo "docker-compose.yml not found. Using docker build..."
+            docker build \
+            -t ${{ inputs.image-name }} \
+            -f "${{ inputs.dockerfile-path }}" \
+            "${{ inputs.context-path }}"
+        fi
+
+    - name: Scan Docker Image with Snyk
+      id: snyk-scan
+      shell: bash
+      run: |
+        echo "Scanning image: ${{ inputs.image-name }}"
+
+        # JSON output
+        snyk container test "${{ inputs.image-name }}" \
+          --severity-threshold="${{ inputs.severity-threshold }}" \
+          --json > snyk-results.json || true
+
+        # Human-readable output
+        snyk container test "${{ inputs.image-name }}" \
+          --severity-threshold="${{ inputs.severity-threshold }}" \
+          > snyk-results.txt || true
+
+        # Count critical vulnerabilities
+        CRITICAL_COUNT=$(jq '[.vulnerabilities[] | select(.severity=="critical")] | length' snyk-results.json)
+        echo "critical-count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+
+        # Fail if above severity threshold
+        if [ "$CRITICAL_COUNT" -gt 0 ] && [ "${{ inputs.severity-threshold }}" = "critical" ]; then
+          echo "Critical vulnerabilities found. Failing."
+          exit 1
+        fi
+
+    - name: Upload Snyk Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: snyk-scan-results-${{ inputs.image-name }}
+        path: |
+          snyk-results.txt
+
+    - name: Comment PR with Snyk Results
+      id: post-pr-comment
+      if: github.event_name == 'pull_request' && inputs.post-pr-comment == true
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("fs");
+
+          const maxLength = 45000;
+          let results = "No Snyk scan results found.";
+
+          try {
+            results = fs.readFileSync("snyk-results.txt", "utf8");
+          } catch (e) {}
+
+          if (results.length > maxLength) {
+            results = results.slice(0, maxLength) + "\n...[truncated]";
+          }
+
+          const body = `### 🔍 Snyk Container Scan Results for \`${process.env.IMAGE_NAME}\`
+          \\`\\`\\`
+          ${results}
+          \\`\\`\\``;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          })
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}

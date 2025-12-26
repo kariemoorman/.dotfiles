@@ -1,0 +1,88 @@
+name: "Container Security Scan using Grype"
+description: "Docker image and container vulnerability scan using Grype"
+
+inputs:
+    ref:
+      description: 'Git ref to scan'
+      required: false
+      type: string
+      default: 'main'
+    image-name:
+      description: 'Name of Docker Image'
+      required: true
+      type: string
+    dockerfile-path:
+      description:  "Filepath to Dockerfile"
+      required: false
+      type: string
+      default: "./Dockerfile"
+    context-path:
+      description: "Directory to send to the Docker daemon"
+      required: false
+      type: string
+      default: "."
+    fail-on-critical:
+      required: false
+      type: boolean
+      default: true
+    post-pr-comment:
+      description: 'Whether to post combined results as a PR comment'
+      required: false
+      type: boolean
+      default: true
+    github-token:
+      description: "GitHub token for PR comments"
+      required: true
+      type: string
+  
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+        
+    - name: Install Grype
+      id: grype-install
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        grype version
+        
+    - name: Build Docker Image
+      id: docker-build
+      shell: bash
+      run: |
+        if [ -f docker-compose.yml ]; then
+            echo "docker-compose.yml found. Using docker compose..."
+            docker compose build --no-cache
+        else
+            echo "docker-compose.yml not found. Using docker build..."
+            docker build \
+            -t ${{ inputs.image-name }} \
+            -f "${{ inputs.dockerfile-path }}" \
+            "${{ inputs.context-path }}"
+        fi
+    
+    - name: Grype Scan Docker Image
+      id: grype-scan
+      shell: bash
+      run: |
+          if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+            grype ${{ inputs.image-name }} --fail-on CRITICAL -o json > grype-image-report.json
+            echo "image_scan_path=grype-image-report.json" >> $GITHUB_OUTPUT
+          else
+            grype ${{ inputs.image-name }} -o json > grype-image-report.json
+            echo "image_scan_path=grype-image-report.json" >> $GITHUB_OUTPUT
+          fi
+
+    - name: Upload Grype Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: grype-scan-results-${{ inputs.image-name }}
+        path: |
+          grype-image-report.json
+  

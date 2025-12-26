@@ -1,0 +1,152 @@
+name: "OWASP ZAP DAST Scan"
+description: "Run OWASP ZAP dynamic application security testing against a Docker container"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: 'main'
+  image-name:
+    description: "Docker image name (e.g., my-app:latest)"
+    required: true
+    type: string
+  dockerfile-path:
+    description: "Path to the Dockerfile"
+    required: false
+    type: string
+    default: "./Dockerfile"
+  docker-build-run-cmd:
+    description: "Manual command for building Docker image and running Docker container"
+    required: false 
+    type: string
+  docker-stop-rm-cmd:
+    description: "Manual command for stopping Docker container and removing Docker image"
+    required: false
+    type: string
+  context-path:
+    description: "Docker build context path"
+    required: false
+    type: string
+    default: "."
+  scan-type:
+    description: "Type of ZAP scan: 'baseline' or 'full'"
+    required: true
+    type: string
+    default: "baseline"
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Build Docker Image
+      id: docker-build
+      shell: bash
+      run: |
+        if [ -f docker-compose.yml ]; then
+          echo "docker-compose.yml found. Using docker compose..."
+          docker compose up -d
+          for i in {1..30}; do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 2
+          done
+        else
+          echo "docker-compose.yml not found. Using docker build..."
+          ${{ inputs.docker-build-run-cmd }}
+        fi
+
+    - name: Run OWASP ZAP Baseline Scan
+      id: baseline-scan
+      if: ${{ inputs.scan-type == 'baseline' }}
+      uses: zaproxy/action-baseline@v0.15.0
+      with:
+        token: ${{ inputs.github-token }}
+        target: 'http://127.0.0.1:8000'
+        fail_action: false
+        cmd_options: -a -r zap-report.html -J zap-report.json'
+
+    - name: Run OWASP ZAP Full Scan
+      id: full-scan
+      if: ${{ inputs.scan-type == 'full' }}
+      uses: zaproxy/action-full-scan@v0.13.0
+      with:
+        token: ${{ inputs.github-token }}
+        target: 'http://127.0.0.1:8000'
+        fail_action: true
+        # rules_file_name: '.zap/rules.tsv'
+        cmd_options: "-a -r zap-report.html -J zap-report.json"
+
+    - name: Stop Docker Container
+      id: docker-stop
+      shell: bash
+      run: |
+        if [ -f docker-compose.yml ]; then
+          docker compose down
+        else
+          ${{ inputs.docker-stop-rm-cmd }}
+        fi
+        
+    - name: Upload OWASP ZAP DAST Reports
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: owasp-zap-dast-report
+        path: |
+          zap-report.html
+          zap-report.json
+        retention-days: 7
+
+    - name: Comment PR with OWASP ZAP DAST Results
+      id: post-pr-comment
+      if: ${{ inputs.post_pr_comment == true && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("fs");
+          const path = require("path");
+    
+          const maxLength = 45000; // GitHub comment max safe length
+          let results = "No OWASP ZAP scan results found.";
+    
+          const reportPathHtml = path.join("${{ inputs.report-dir }}", "zap-report.html");
+          const reportPathJson = path.join("${{ inputs.report-dir }}", "zap-report.json");
+    
+          try {
+            // Read HTML report if available
+            if (fs.existsSync(reportPathHtml)) {
+              results = fs.readFileSync(reportPathHtml, "utf8");
+            } 
+            // fallback to JSON report
+            else if (fs.existsSync(reportPathJson)) {
+              results = fs.readFileSync(reportPathJson, "utf8");
+            }
+          } catch (e) {
+            results = `Error reading ZAP reports: ${e}`;
+          }
+    
+          if (results.length > maxLength) {
+            results = results.slice(0, maxLength) + "\n...[truncated]";
+          }
+    
+          const body = `### 🔍 OWASP ZAP DAST Scan Results
+          \\`\\`\\`
+          ${results}
+          \\`\\`\\`
+          `;
+    
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+            body
+          });
