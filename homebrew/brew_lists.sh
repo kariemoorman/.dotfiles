@@ -1,6 +1,7 @@
 #!/bin/bash
 
 CORE_PACKAGES=(
+      cmake
       zsh
       zsh-async
       zsh-autosuggestions
