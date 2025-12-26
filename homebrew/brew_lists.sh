@@ -29,6 +29,7 @@ LANG_PACKAGES=(
       python@3.11
       python@3.13
       ruby
+      rust
       terraform
       terrascan
 )
