@@ -20,8 +20,11 @@ LANG_PACKAGES=(
       docker-completion
       go
       jq
+      kubernetes-cli
+      minikube
       openjdk@21
       pnpm
+      podman
       python@3.10
       python@3.11
       python@3.13
@@ -31,6 +34,7 @@ LANG_PACKAGES=(
 )
 
 TOOL_PACKAGES=(
+      irssi
       imagemagick
       grype
       trivy
