@@ -73,6 +73,7 @@ DB_PACKAGES=(
       postgresql
       pgvector
       pg_bm25
+      pg_textsearch
       pgcrypto
       timescaledb
       redis
