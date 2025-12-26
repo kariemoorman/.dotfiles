@@ -9,3 +9,5 @@ Reusable Github Actions CI/CD workflows, including vulnerability scanning, build
 #### [Sublime Text](https://github.com/kariemoorman/.dotfiles/tree/main/sublime)
 Sublime Text color scheme and preferences.
 
+#### [Homebrew](https://github.com/kariemoorman/.dotfiles/tree/main/homebrew)
+Homebrew installation and management scripts for formulae and casks.
