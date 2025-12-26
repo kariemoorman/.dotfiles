@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Import functions from functions.sh.
+# Import functions from brew_functions.sh.
 echo "Sourcing functions.sh..."
 source "brew_functions.sh"
 echo "Functions imported successfully!"
 
-# # Import pkg list from brew_list.sh.
-echo "Sourcing brew_list.sh..."
+# # Import pkg list from brew_lists.sh.
+echo "Sourcing brew_lists.sh..."
 source "brew_lists.sh"
 echo "Lists imported successfully!"
 
