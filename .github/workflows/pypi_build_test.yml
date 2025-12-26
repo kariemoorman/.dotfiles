@@ -1,0 +1,51 @@
+name: "Pypi Build & Test Reusable Workflow"
+description: "Build and test Python package"
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to scan'
+        required: false
+        type: string
+        default: 'main'
+      test-filepath:
+        description: 'Filepath to testsets'
+        required: true
+        type: string
+      post-pr-comment:
+        description: "Post scan results back to the PR"
+        required: false
+        type: boolean
+        default: true
+      python-version:
+        description: "Python version"
+        required: true
+        type: string
+        default: "3.12"
+
+    secrets:
+      github-token:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pypi-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Pypi Package Build
+        uses: <>/github-reusable-workflows/.github/actions/pypi/build@main
+        with:
+          python-version: ${{ inputs.python-version }}
+          ref: ${{ inputs.ref }}
+
+      - name: Run Pypi Package Test
+        uses: <>/github-reusable-workflows/.github/actions/pypi/test@main
+        with:
+          test-filepath: ${{ inputs.test-filepath }}
+          post-pr-comment: ${{ inputs.post-pr-comment }}
+          python-version: ${{ inputs.python-version }}
+          github-token: ${{ secrets.github-token }}
