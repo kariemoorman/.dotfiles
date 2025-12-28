@@ -26,7 +26,7 @@ runs:
   steps:
     - name: Checkout repository
       id: repo-checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
@@ -37,7 +37,7 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Download Build Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: dist
         path: dist/
@@ -141,7 +141,7 @@ runs:
 
     - name: Upload Test Results
       id: upload-results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: pytest-results
         path: |

@@ -31,7 +31,7 @@ runs:
   steps:
     - name: Checkout repository
       id: repo-checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
         
@@ -47,7 +47,7 @@ runs:
 
     - name: Upload Vulnerability Scan Results
       id: upload-results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: trivy-report
         path: trivy-report.json

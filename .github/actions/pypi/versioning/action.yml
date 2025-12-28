@@ -26,7 +26,7 @@ runs:
   steps:
     - name: Checkout repository with Versioning
       id: repo-checkout-versioning
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
         fetch-depth: 0

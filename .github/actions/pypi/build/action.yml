@@ -18,7 +18,7 @@ runs:
   steps:
     - name: Checkout repository without Versioning
       id: repo-checkout-no-versioning
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
@@ -40,7 +40,7 @@ runs:
         python -m build --wheel
 
     - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: dist
         path: dist/

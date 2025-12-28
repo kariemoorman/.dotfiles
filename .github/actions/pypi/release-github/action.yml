@@ -24,7 +24,7 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Download Test Results
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: pytest-results
         path: test-results/
@@ -39,7 +39,7 @@ runs:
         echo "✅ Tests passed."
   
     - name: Download Build Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: dist
         path: dist/

@@ -17,7 +17,7 @@ runs:
   steps:
     - name: Checkout repository
       id: repo-checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
       
@@ -45,7 +45,7 @@ runs:
 
     - name: Upload CodeQL Scan Results
       id: upload-results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: codeql-results-${{ inputs.language }}
         path: codeql-results/codeql-results-${{ inputs.language }}.txt
