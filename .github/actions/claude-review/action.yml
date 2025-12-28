@@ -1,0 +1,135 @@
+name: "Claude Code Review"
+description: "Run Claude Code for Code Review"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: ${{ github.ref }}
+  fetch-depth: 
+    description: 'Number of commits to fetch. Use 0 for full history'
+    required: false
+    type: number
+    default: 1
+  system-prompt:
+    description: "Filepath to system prompt for code review"
+    required: true
+    type: string
+  review-prompt:
+    description: "Filepath to user prompt for code review"
+    required: true
+    type: string
+  track-progress:
+    description: "Force tag mode with tracking comments"
+    required: false
+    type: boolean
+    default: false
+  max-turns:
+    description: "Max turns the model can take during code review process"
+    required: true
+    type: number
+    default: 5
+  timeout-minutes:
+    description: 'Timeout for the Claude Code action'
+    required: false
+    type: number
+    default: 10
+  allowed-tools:
+    description: "Tools permitted for use by Claude"
+    required: true
+    type: string
+    default: "Task,Edit,Read,Glob,Grep,SlashCommand,mcp__github_comment__update_claude_comment,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+  disallowed-tools:
+    description: "Tools not permitted for use by Claude"
+    required: true
+    type: string
+    default: "WebFetch,WebSearch,DeleteFile,Bash(gh pr review --approve:*),Bash(gh pr review -a:*)"
+  claude-model:
+    description: "Anthropic Model for code review"
+    required: true
+    type: string
+    default: "claude-sonnet-4-5-20250929"
+  post_pr_comment:
+    description: "Post scan results back to the PR"
+    required: false
+    type: boolean
+    default: true
+  claude-token:
+    description: "Anthropic API key for accessing Claude model"
+    required: true
+    type: string
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+
+    - name: Validate and Load Prompt Files
+      id: load-prompts
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        validate_file() {
+          local file="$1"
+          local label="$2"
+
+          if [[ -z "$file" ]]; then
+            echo "::error::$label path is empty"
+            exit 1
+          fi
+
+          if [[ ! -f "$file" ]]; then
+            echo "::error::$label file not found: $file"
+            exit 1
+          fi
+
+          if [[ ! -s "$file" ]]; then
+            echo "::error::$label file is empty: $file"
+            exit 1
+          fi
+        }
+
+        validate_file "${{ inputs.system-prompt-file }}" "System prompt"
+        validate_file "${{ inputs.review-prompt-file }}" "Review prompt"
+
+        {
+          echo "system_prompt<<EOF"
+          cat "${{ inputs.system-prompt-file }}"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        {
+          echo "review_prompt<<EOF"
+          cat "${{ inputs.review-prompt-file }}"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: PR Review
+      id: claude-review
+      uses: anthropics/claude-code-action@v1
+      timeout-minutes: ${{ inputs.timeout-minutes }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        prompt: ${{ steps.load-prompts.outputs.review_prompt }}
+        anthropic_api_key: ${{ inputs.claude-token }}
+        track_progress: ${{ inputs.track-progress }}
+        claude_args: |
+          --system-prompt ${{ steps.load-prompts.outputs.system_prompt }}
+          --max-turns ${{ inputs.max-turns }}
+          --allowedTools ${{ inputs.allowed-tools }}
+          --disallowedTools ${{ inputs.disallowed-tools }}
+          --model ${{ inputs.claude-model }}
+          
