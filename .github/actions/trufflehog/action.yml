@@ -27,7 +27,7 @@ runs:
   steps:
     - name: Checkout repository
       id: repo-checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
@@ -73,7 +73,7 @@ runs:
 
     - name: Upload scan results
       id: upload-scan
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: trufflehog-results
         path: trufflehog-results-redacted.json
