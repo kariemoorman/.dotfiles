@@ -1,0 +1,138 @@
+name: "Terraform Vulnerability Scan Reusable Workflow"
+description: "Scan terraform for vulnerabilities"
+
+on:
+  workflow_call:
+    inputs:
+      run_checkov_scan:
+        description: "Whether to run Checkov scan"
+        required: true
+        type: boolean
+      run_tfsec_scan:
+        description: "Whether to run TFSec scan"
+        required: true
+        type: boolean
+      run_trivy_scan:
+        description: "Whether to run Trivy scan"
+        required: true
+        type: boolean
+      run_snyk_scan:
+        description: "Whether to run Snyk scan"
+        required: false
+        type: boolean
+      ref:
+        description: 'Git ref to scan'
+        required: false
+        type: string
+        default: 'main'
+      directory_path:
+        description: 'Directory to scan'
+        required: false
+        type: string
+        default: '.'
+      fail_on_critical:
+        description: 'Fail workflow if critical vulnerabilities are found?'
+        required: false
+        type: boolean
+        default: true
+      iac-type:
+        description: "Required IaC type (cloudformation, terraform, kubernetes, all)"
+        required: false
+        type: string
+        default: "all"
+      checkov-download_external_modules:
+        description: "Whether to external terraform modules"
+        required: false
+        type: boolean
+        default: true
+      checkov-skip-check:
+        description: "Specific Checkov check_ids to skip"
+        required: false
+        type: string
+        default: ''
+      tfsec-exclude-ids:
+        description: "Specific TFSec check_ids to skip"
+        required: false
+        type: string
+        default: ''
+      snyk_severity_threshold:
+        description: "Fail if vulnerabilities at or above this severity exist (low|medium|high|critical)"
+        required: false
+        type: string
+        default: "high"
+      post_pr_comment:
+        description: 'Post scan results as a PR comment?'
+        required: false
+        type: boolean
+        default: true
+    
+    secrets:
+      github-token:
+        required: true
+      snyk-token:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  checkov-scan:
+    if: ${{ inputs.run_checkov_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Checkov Scan
+        id: checkov-scan
+        uses: kariemoorman/.dotfiles/.github/actions/checkov@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+          iac-type: ${{ inputs.iac-type }}
+          download_external_modules: ${{ inputs.checkov-download_external_modules }}
+          skip-check: ${{ inputs.checkov-skip-check }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+
+  tfsec-scan:
+    if: ${{ inputs.run_tfsec_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run TFSec Scan
+        id: tfsec-scan
+        uses: kariemoorman/.dotfiles/.github/actions/tfsec@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+          exclude-ids: ${{ inputs.tfsec-exclude-ids }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+
+  trivy-scan:
+    if: ${{ inputs.run_trivy_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy Scan
+        id: trivy-scan
+        uses: kariemoorman/.dotfiles/.github/actions/trivy/iac-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}
+
+  snyk-scan:
+    if: ${{ inputs.run_snyk_scan == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Snyk Scan
+        id: snyk-scan
+        uses: kariemoorman/.dotfiles/.github/actions/snyk/iac-scan@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+          fail_on_critical: ${{ inputs.fail_on_critical }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}

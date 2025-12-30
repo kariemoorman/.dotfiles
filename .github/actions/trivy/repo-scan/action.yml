@@ -41,7 +41,7 @@ runs:
       with:
         scan-type: 'fs'
         scan-ref: ${{ inputs.path }}
-        output: trivy-report.json
+        output: trivy-repository-scan-report.json
         format: json
         exit-code: 0
 
@@ -49,8 +49,8 @@ runs:
       id: upload-results
       uses: actions/upload-artifact@v6
       with:
-        name: trivy-report
-        path: trivy-report.json
+        name: trivy-results
+        path: trivy-repository-scan-report.json
         retention-days: 7
 
     - name: Fail build on High/Criticial Vulnerabilities
@@ -60,7 +60,7 @@ runs:
       with:
         scan-type: "fs"
         format: table
-        scan-ref: .
+        scan-ref: ${{ inputs.path }}
         severity: HIGH,CRITICAL
         ignore-unfixed: true
         exit-code: 1
@@ -74,7 +74,7 @@ runs:
         github-token: ${{ inputs.github-token }}
         script: |
           const fs = require('fs');
-          const report = JSON.parse(fs.readFileSync('trivy-report.json', 'utf8'));
+          const report = JSON.parse(fs.readFileSync('trivy-repository-scan-report.json', 'utf8'));
     
           let findings = report.Results?.flatMap(r => r.Vulnerabilities || []) || [];
     

@@ -50,6 +50,7 @@ runs:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
     - name: Install Snyk CLI
+      id: snyk-install
       shell: bash
       run: |
         curl -sL https://downloads.snyk.io/cli/latest/snyk-linux -o snyk
@@ -57,14 +58,23 @@ runs:
         sudo mv snyk /usr/local/bin/snyk
 
     - name: Authenticate Snyk CLI
+      id: snyk-auth
       shell: bash
       run: snyk auth "${{ inputs.snyk-token }}"
+
+    - name: Extract Docker Base Image Name
+      id: docker-base-image
+      shell: bash
+      run: |
+        BASE_IMAGE=$(grep -i '^FROM' Dockerfile | head -n 1 | awk '{print $2}')
+        echo "Base image detected: $BASE_IMAGE"
+        echo "base-image=$BASE_IMAGE" >> "$GITHUB_OUTPUT"
 
     - name: Scan Docker Base Image & Build
       id: snyk-base-image-scan
       shell: bash
       run: |
-        snyk test --docker python:3.12-alpine3.22 --file=${{ inputs.dockerfile-path }} --severity-threshold="${{ inputs.severity-threshold }}"
+        snyk test --docker ${{ steps.docker-base-image.outputs.base-image }} --file=${{ inputs.dockerfile-path }} --severity-threshold="${{ inputs.severity-threshold }}"
 
     - name: Build Docker Image
       id: docker-build

@@ -126,6 +126,9 @@ jobs:
         uses: kariemoorman/.dotfiles/.github/actions/trivy/docker-scan@main
         with:
           ref: ${{ inputs.ref }}
+          image-name: ${{ inputs.image-name }}
+          dockerfile-path: ${{ inputs.dockerfile-path }}
+          context-path: ${{ inputs.context-path }}
           fail_on_critical: ${{ inputs.fail_on_critical }}
           post_pr_comment: ${{ inputs.post_pr_comment }}
           github-token: ${{ secrets.github-token }}

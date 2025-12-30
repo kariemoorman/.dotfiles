@@ -1,0 +1,128 @@
+name: "Trivy IaC Security Scan"
+description: "Scan Infrastructure as Code (Terraform, Kubernetes, etc.) for misconfigurations using Trivy"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
+  fail_on_critical:
+    description: 'Fail workflow if critical misconfigurations are found'
+    required: false
+    type: boolean
+    default: true
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Trivy IaC Scan
+      id: iac-scan
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: config
+        format: json
+        scan-ref: ${{ inputs.scan-path }}
+        output: trivy-iac-report.json
+        exit-code: 0
+
+    - name: Fail Build on High/Criticial Vulnerabilities
+      id: scan-status
+      if: ${{ inputs.fail_on_critical == true }}
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: config
+        format: json
+        scan-ref: ${{ inputs.scan-path }}
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        output: trivy-iac-report.json
+        exit-code: 1
+        skip-setup-trivy: true
+
+    - name: Upload Vulnerability Scan Results
+      id: upload-results
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: trivy-results
+        path: trivy-iac-report.json
+        retention-days: 7
+
+    - name: Post Trivy IaC results to PR
+      if: ${{ github.event.pull_request && inputs.post_pr_comment == true }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+
+          // Read Trivy report
+          const report = JSON.parse(
+            fs.readFileSync('trivy-iac-report.json', 'utf8')
+          );
+
+          // Ensure Results exists
+          const results = Array.isArray(report.Results) ? report.Results : [];
+
+          // Calculate failures
+          let totalFailures = 0;
+          const perTarget = results.map(r => {
+            const failures = r?.MisconfSummary?.Failures ?? 0;
+            totalFailures += failures;
+
+            return {
+              target: r.Target || 'unknown',
+              failures
+            };
+          });
+
+          // Build markdown output
+          let summary = `### Trivy IaC Misconfiguration Scan 🛡️
+
+          **Total Failures:** \`${totalFailures}\`
+
+          `;
+
+          if (perTarget.length > 0) {
+            summary += `<details><summary>Failures by Target</summary>
+
+          | Target | Failures |
+          |-------|----------|
+          `;
+
+            for (const item of perTarget) {
+              summary += `| ${item.target} | ${item.failures} |\n`;
+            }
+
+            summary += `
+          </details>
+          `;
+          }
+
+          // Post PR comment
+          await github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: summary
+          });

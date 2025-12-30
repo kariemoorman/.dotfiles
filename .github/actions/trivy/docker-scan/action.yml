@@ -44,12 +44,6 @@ runs:
       with:
         ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
         
-    - name: Install Trivy
-      id: trivy-install
-      shell: bash
-      run: |
-        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.68.1
-
     - name: Build Docker Image
       id: docker-build
       shell: bash
@@ -59,30 +53,36 @@ runs:
           -f "${{ inputs.dockerfile-path }}" \
           "${{ inputs.context-path }}"
 
-    - name: Trivy Image Scan
+    - name: Trivy Docker Image Scan (JSON)
       id: trivy-image-scan
-      shell: bash
-      run: |
-        trivy image --format json \
-          --output trivy-image-report.json \
-          --severity HIGH,CRITICAL \
-          ${{ inputs.image-name }}
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: image
+        image-ref: ${{ inputs.dockerfile-path }}
+        format: json
+        output: trivy-image-report.json
+        exit-code: 0
 
-        echo "image_scan_path=trivy-image-report.json" >> $GITHUB_OUTPUT
+    - name: Upload Vulnerability Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v6
+      with:
+        name: trivy-results
+        path: trivy-image-report.json
+        retention-days: 7
 
-    - name: Fail on critical issues
-      id: failure-count
+    - name: Fail Build on High/Criticial Vulnerabilities
+      id: scan-status
       if: ${{ inputs.fail_on_critical == true }}
-      shell: bash
-      run: |
-        CRIT_COUNT=$(jq '.Results[].Vulnerabilities | map(select(.Severity=="CRITICAL")) | length' trivy-image-report.json | paste -sd+ - | bc)
-        
-        echo "Critical vulnerabilities found: $CRIT_COUNT"
-
-        if [ "$CRIT_COUNT" -gt 0 ]; then
-          echo "❌ Critical vulnerabilities detected!"
-          exit 1
-        fi
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: image
+        format: table
+        scan-ref: ${{ inputs.path }}
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: 1
+        skip-setup-trivy: true
 
     - name: Post Trivy results to PR
       id: post-pr-comment

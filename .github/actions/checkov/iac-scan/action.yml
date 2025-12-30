@@ -1,0 +1,85 @@
+name: "Trivy IaC Security Scan"
+description: "Scan IaC (Terraform, Kubernetes, etc.) for misconfigurations using Trivy"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
+  fail_on_critical:
+    description: 'Fail workflow if critical misconfigurations are found'
+    required: false
+    type: boolean
+    default: true
+  iac-type:
+    description: "Required IaC type (cloudformation, terraform, kubernetes, all)"
+    required: false
+    type: string
+    default: "all"
+  download_external_modules:
+    description: "Download external terraform modules from public git repositories and terraform registry"
+    required: false
+    type: boolean
+    default: true
+  skip-check:
+    description: "Specific check_ids to skip"
+    required: false
+    type: string
+    default: none
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Checkov IaC scan
+      id: iac-scan
+      uses: bridgecrewio/checkov-action@v12
+      with:
+        directory: ${{ inputs.scan-path }}
+        framework: ${{ inputs.iac-type }}
+        download_external_modules: ${{ inputs.download_external_modules }}
+        soft_fail: true
+        skip_check: ${{ inputs.skip-check }}
+        log_level: INFO
+        output_format: cli,json
+        output_file_path: console,checkov-iac-report.json
+
+    - name: Upload Vulnerability Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v4
+      with:
+        name: checkov-results
+        path: checkov-iac-report.json
+        retention-days: 7
+
+    - name: Fail Build on High/Criticial Vulnerabilities
+      id: scan-status
+      if: ${{ inputs.fail_on_critical == true }}
+      uses: bridgecrewio/checkov-action@v12
+      with:
+        directory: ${{ inputs.scan-path }}
+        framework: ${{ inputs.iac-type }}
+        download_external_modules: ${{ inputs.download_external_modules }}
+        skip_check: ${{ inputs.skip-check }}
+        check: HIGH,CRITICAL
+        log_level: INFO
+        soft_fail: false

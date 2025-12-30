@@ -1,0 +1,64 @@
+name: "Terraform Validation Scan Reusable Workflow"
+description: "Validate terraform code syntax, style, and plan"
+
+on:
+  workflow_call:
+    ref:
+      description: 'Git ref to scan'
+      required: false
+      type: string
+    scan-path:
+      description: 'Path to IaC files (Terraform, YAML, etc.)'
+      required: false
+      type: string
+      default: "."
+    post_pr_comment:
+      description: 'Post scan results as a PR comment?'
+      required: false
+      type: boolean
+      default: true
+    github-token:
+      description: "GitHub token for PR comments"
+      required: true
+      type: string
+
+    secrets:
+      github-token:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tflint-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run TFLint Scan
+        id: tflint-scan
+        uses: kariemoorman/.dotfiles/.github/actions/terraform/lint@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+
+  tf-fmt-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Terraform Style Scan
+        id: tf-fmt-scan
+        uses: kariemoorman/.dotfiles/.github/actions/terraform/style@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+
+  tf-validate-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Terraform Validate Scan
+        id: tf-validate
+        uses: kariemoorman/.dotfiles/.github/actions/terraform/validate@main
+        with:
+          ref: ${{ inputs.ref }}
+          scan-path: ${{ inputs.directory_path }}
+          post_pr_comment: ${{ inputs.post_pr_comment }}
+          github-token: ${{ secrets.github-token }}

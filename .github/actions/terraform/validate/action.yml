@@ -1,0 +1,77 @@
+name: "Terraform Validation Scan"
+description: "Run Terraform validate and plan"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
+  post_pr_comment:
+    description: 'Post scan results as a PR comment?'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Set Up Terraform
+      id: tf-setup
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init
+      id: tf-init
+      shell: bash
+      working-directory: ${{ inputs.scan-path }}
+      run: terraform init -input=false
+
+    - name: Terraform Validate
+      id: tf-validate
+      shell: bash
+      working-directory: ${{ inputs.scan-path }}
+      run: |
+        terraform validate -no-color | tee tf-validate.txt
+        echo "::set-output name=validate_output::$(cat tf-validate.txt)"
+
+
+    - uses: actions/github-script@v7
+      if: ${{ github.event.pull_request && inputs.post_pr_comment == true }}
+      env:
+        PLAN: "terraform\n${{ steps.tf-plan.outputs.stdout }}"
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const validationOutput = `${{ steps.tf-validate.outputs.validate_output }}`;
+          const output = `#### Terraform Initialization ⚙️ \`${{ steps.tf-init.outcome }}\`
+          #### Terraform Validation 🤖 \`${{ steps.tf-validate.outcome }}\`
+
+          <details><summary>Validation Output</summary>
+
+          \`\`\`
+          ${validationOutput}
+          \`\`\`
+
+          </details>
+
+          await github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          })

@@ -1,0 +1,90 @@
+name: "TFSec Security Scan"
+description: "Scan Infrastructure as Code (Terraform, Kubernetes, etc.) for misconfigurations using TFSec"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+    default: 'main'
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
+  fail_on_critical:
+    description: 'Fail workflow if critical misconfigurations are found'
+    required: false
+    type: boolean
+    default: true
+  exclude-ids:
+    description: "Specific check_ids to skip"
+    required: false
+    type: string
+    default: ''
+  post_pr_comment:
+    description: 'Post scan results as a PR comment'
+    required: false
+    type: boolean
+    default: true
+  github-token:
+    description: "GitHub token for PR comments"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout Repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Run TFSec Scan
+      id: iac-scan
+      uses: aquasecurity/tfsec-action@v1.0.3
+      with:
+        working_directory: ${{ inputs.scan-path }}
+        soft_fail: true
+        additional_args: "--out tfsec-iac-report.txt --exclude ${{ inputs.exclude-ids }}"
+
+    - name: Upload Vulnerability Scan Results
+      id: upload-results
+      uses: actions/upload-artifact@v6
+      with:
+        name: tfsec-results
+        path: tfsec-iac-report.txt
+        retention-days: 7
+
+    - name: Fail Build on High/Criticial Vulnerabilities
+      id: scan-status
+      if: ${{ inputs.fail_on_critical == true }}
+      uses: aquasecurity/tfsec-action@v1
+      with:
+        working_directory: ${{ inputs.scan-path }}
+        additional_args: "--exclude ${{ inputs.exclude-ids }} --minimum-severity HIGH"
+
+    - name: Comment PR with TFSec Scan Results
+      id: post-pr-comment
+      if: ${{ inputs.post_pr_comment == true && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+
+          let reportText = fs.readFileSync('tfsec-iac-report.txt', 'utf8');
+
+          const body = `### TFSec IaC Scan Results 🛡️
+
+          \`\`\`
+          ${reportText}
+          \`\`\``;
+
+          await github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body
+          });

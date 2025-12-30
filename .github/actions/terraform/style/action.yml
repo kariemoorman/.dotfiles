@@ -1,0 +1,37 @@
+name: "Terraform Lint Scan"
+description: "Run Terraform linting"
+
+inputs:
+  ref:
+    description: 'Git ref to scan'
+    required: false
+    type: string
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      id: repo-checkout
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+    - name: Set up Terraform
+      id: tf-setup
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init
+      id: tf-init
+      shell: bash
+      working-directory: ${{ inputs.scan-path }}
+      run: terraform init -input=false
+
+    - name: Run terraform Format Scan
+      id: tf-fmt-scan
+      shell: bash
+      run: terraform fmt -check -recursive ${{ inputs.scan-path }} 

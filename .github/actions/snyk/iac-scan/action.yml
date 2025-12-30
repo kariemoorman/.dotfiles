@@ -7,6 +7,11 @@ inputs:
     required: false
     type: string
     default: ${{ github.ref }}
+  scan-path:
+    description: 'Path to IaC files (Terraform, YAML, etc.)'
+    required: false
+    type: string
+    default: "."
   severity-threshold:
     description: "Fail if vulnerabilities at or above this severity exist (low|medium|high|critical)"
     required: false
@@ -52,62 +57,49 @@ runs:
       id: snyk-code
       shell: bash
       run: |
-        echo "Scanning repository for code vulnerabilities"
+        echo "Scanning repository for vulnerabilities"
 
         # JSON output
-        snyk code test --json > snyk-code-results.json || true
+        snyk iac test ${{ inputs.scan-path }} --json > snyk-iac-results.json || true
 
         # Human-readable output
-        snyk code test > snyk-code-results.txt || true
+        snyk iac test ${{ inputs.scan-path }} > snyk-iac-results.txt || true
 
-        # Count vulnerabilities above severity threshold
-        COUNT=$(jq "[.issues[]? | select(.severity==\"${{ inputs.severity-threshold }}\")] | length" snyk-code-results.json)
-        echo "vuln-count=$COUNT" >> $GITHUB_OUTPUT
-
-        # Fail if any issues above threshold
-        if [ "$COUNT" -gt 0 ]; then
-          echo "Vulnerabilities found exceeding threshold '${{ inputs.severity-threshold }}'. Failing."
-          exit 1
-        fi
-
-    - name: Upload Snyk Code Scan Results
+    - name: Upload Snyk IaC Scan Results
       id: upload-results
       uses: actions/upload-artifact@v6
       with:
-        name: snyk-code-results
+        name: snyk-iac-results
         path: |
-          snyk-code-results.json
-          snyk-code-results.txt
+          snyk-iac-results.json
+          snyk-iac-results.txt
         retention-days: 7
 
-    - name: Comment PR with Snyk Code Results
+    - name: Comment PR with Snyk IaC Results
       id: post-pr-comment
       if: ${{ inputs.post_pr_comment == true && github.event_name == 'pull_request' }}
       uses: actions/github-script@v7
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const fs = require("fs");
+          const fs = require('fs');
 
-          const maxLength = 45000;
-          let results = "No Snyk scan results found.";
+          let reportText = fs.readFileSync('snyk-iac-results.txt', 'utf8');
 
-          try {
-            results = fs.readFileSync("snyk-code-results.txt", "utf8");
-          } catch (e) {}
-
-          if (results.length > maxLength) {
-            results = results.slice(0, maxLength) + "\n...[truncated]";
+          const tipIndex = reportText.indexOf('Tip');
+          if (tipIndex !== -1) {
+            reportText = reportText.slice(0, tipIndex).trim();
           }
 
-          const body = `### 🔍 Snyk Code Scan Results
-          \\`\\`\\`
-          ${results}
-          \\`\\`\\`
-          `;
+          const body = `### Snyk IaC Scan Results 🛡️
+
+          \`\`\`
+          ${reportText}
+          \`\`\``;
+
           await github.rest.issues.createComment({
+            issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: context.payload.pull_request.number,
             body
-          })
+          });
