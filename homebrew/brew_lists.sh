@@ -66,6 +66,10 @@ TOOL_PACKAGES=(
       sops
       snyk
       gnupg
+      msitools
+      radare2
+      mono
+      steghide
 )
 
 DB_PACKAGES=(
@@ -109,4 +113,7 @@ CASK_APPS=(
       vlc
       vscodium
       wireshark-app
+      ilspy
+      dotnet-sdk
+      dotnet-sdk@8
 )
