@@ -33,6 +33,8 @@ LANG_PACKAGES=(
       rust
       terraform
       terrascan
+      gradle
+      maven
 )
 
 TOOL_PACKAGES=(
