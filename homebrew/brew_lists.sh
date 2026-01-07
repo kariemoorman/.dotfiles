@@ -2,6 +2,7 @@
 
 CORE_PACKAGES=(
       cmake
+      nano
       zsh
       zsh-async
       zsh-autosuggestions
