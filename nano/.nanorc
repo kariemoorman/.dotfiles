@@ -1,0 +1,50 @@
+set mouse
+set smooth
+set tabsize 4
+set autoindent
+set tabstospaces
+set linenumbers
+
+# C / C++
+syntax "cpp" "\.(cpp|hpp|c|h)$"
+color brightyellow start="/\*" end="\*/"
+color brightyellow "//.*$"
+color brightblue "\<(int|float|double|return|if|else|for|while)\>"
+
+# Python
+syntax "python" "\.py$"
+set tabsize 4
+color green "#.*"
+color brightblue "\<(def|class|import|from)\>"
+
+# Bash
+syntax "bash" "\.(sh|bash)$"
+color green "#.*$"
+color brightblue "\<(if|then|else|elif|fi|for|in|do|done|case|esac|function|return|export|unset|source)\>"
+color brightred "\".*?\""
+color brightred "'.*?'"
+color cyan "\$[A-Za-z0-9_]+"
+
+# YAML
+syntax "yaml" "\.(yml|yaml)$"
+color green "#.*$"
+color brightblue "^\s*[A-Za-z0-9_-]+:"
+color brightred ":( |\S).*"
+
+# JSON
+syntax "json" "\.json$"
+color brightblue "\"[^\"]+\""
+color brightred "\b(true|false|null)\b"
+color green "#.*$"
+
+# Dockerfile
+syntax "dockerfile" "Dockerfile$"
+color brightblue "^(FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|WORKDIR|USER|VOLUME|ARG|ONBUILD|HEALTHCHECK|SHELL)\>"
+color brightyellow "#.*$"
+color brightred "\".*?\""
+
+# ENV
+syntax "env" "\.env$"
+color brightblue "^[A-Za-z_][A-Za-z0-9_]*="
+color brightred "=[^\n]*"
+color green "#.*$"
