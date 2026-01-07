@@ -9,7 +9,7 @@ Sublime Text color scheme and preferences files.
 #### [Homebrew](https://github.com/kariemoorman/.dotfiles/tree/main/homebrew)
 Homebrew installation and management scripts for brew formulae and casks.
 
-#### [ZShel](https://github.com/kariemoorman/.dotfiles/tree/main/zsh)
+#### [ZShell](https://github.com/kariemoorman/.dotfiles/tree/main/zsh)
 ZShell installation and management scripts for zshell (e.g., plugins, aliases, exports).
 
 #### [Nano](https://github.com/kariemoorman/.dotfiles/tree/main/nano)
