@@ -1,6 +1,4 @@
 set mouse
-set smooth
-set tabsize 4
 set autoindent
 set tabstospaces
 set linenumbers
@@ -12,8 +10,8 @@ color brightyellow "//.*$"
 color brightblue "\<(int|float|double|return|if|else|for|while)\>"
 
 # Python
-syntax "python" "\.py$"
 set tabsize 4
+syntax "python" "\.py$"
 color green "#.*"
 color brightblue "\<(def|class|import|from)\>"
 
@@ -26,6 +24,7 @@ color brightred "'.*?'"
 color cyan "\$[A-Za-z0-9_]+"
 
 # YAML
+set tabsize 2
 syntax "yaml" "\.(yml|yaml)$"
 color green "#.*$"
 color brightblue "^\s*[A-Za-z0-9_-]+:"
