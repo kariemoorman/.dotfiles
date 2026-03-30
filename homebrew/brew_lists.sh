@@ -96,6 +96,7 @@ DB_PACKAGES=(
 
 CASK_APPS=(
       audacity
+      blockblock
       brave-browser
       calibre
       dbeaver-community
@@ -107,6 +108,7 @@ CASK_APPS=(
       knockknock
       mullvad-browser
       mullvad-vpn
+      colima
       rancher
       raspberry-pi-imager
       rstudio
