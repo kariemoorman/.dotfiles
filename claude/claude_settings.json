@@ -1,0 +1,115 @@
+
+  "permissions": {
+    "allow": [
+      "Read(/opt/workspace/CLAUDE_ONLY/**)",
+      "Edit(/opt/workspace/CLAUDE_ONLY/**)",
+      "Write(/opt/workspace/CLAUDE_ONLY/**)"
+    ],
+    "deny": [
+      "Edit(~/**)",
+      "Write(~/**)",
+      "Read(~/**)",
+      "Bash(wget *)",
+      "Bash(/usr/bin/wget *)",
+      "Bash(/usr/local/bin/wget *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/claude_agent/.scripts/setup_claude_project.sh .",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c '{hookSpecificOutput: {hookEventName: \"PreToolUse\", updatedInput: {command: (.tool_input.command | gsub(\"(?<![a-zA-Z0-9_.])(curl|/usr/bin/curl|/usr/local/bin/curl)(?![a-zA-Z0-9_])\"; \"/Users/claude_agent/.scripts/check_all_curl.py\"))}}}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qiE '(which\\s+curl|bash\\s+-c.*curl|xargs.*curl|eval.*curl|\\$\\(.*curl)' && echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"Indirect curl invocation detected. Use curl directly so the homograph filter can intercept it.\"}}' || echo '{}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qiE '(^|[;&|\\s])(http|httpie|fetch|nc|ncat|socat)\\s' && echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"Blocked HTTP tool. Use curl so the homograph filter can intercept.\"}}' || echo '{}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qiE '(urllib|requests\\.|http\\.client|Net::HTTP|net/http|node.*fetch|axios|got\\(|undici|aiohttp|httpx)' && echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"HTTP request via scripting language detected. Route through curl for homograph filtering.\"}}' || echo '{}'"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.url' | /Users/claude_agent/.scripts/check_all_curl.py --url-only && echo '{}' || echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"URL failed homograph check.\"}}'"
+          }
+        ]
+      }
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "*.githubusercontent.com",
+        "registry.npmjs.org",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "allowManagedDomainsOnly": false
+    },
+    "filesystem": {
+      "allowWrite": [
+        "/opt/workspace/CLAUDE_ONLY"
+      ],
+      "denyWrite": [
+        "/"
+      ],
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        "/opt/workspace/CLAUDE_ONLY",
+	      "/Users/claude_agent/.scripts"
+      ]
+    }
+  }
+}
