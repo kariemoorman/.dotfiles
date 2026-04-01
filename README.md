@@ -1,6 +1,6 @@
 # .dotfiles
 
-#### [Git Hooks Secret Scanning](https://github.com/kariemoorman/.dotfiles/tree/main/git-templates)
+#### [Git Hooks Secret Scanning](https://github.com/kariemoorman/.dotfiles/tree/main/.git-templates)
 Secret scanning on both pre-commit and pre-push actions using Git hooks.
 
 #### [Sublime Text](https://github.com/kariemoorman/.dotfiles/tree/main/sublime)
@@ -14,3 +14,6 @@ ZShell installation and management scripts for zshell (e.g., plugins, aliases, e
 
 #### [Nano](https://github.com/kariemoorman/.dotfiles/tree/main/nano)
 Nano configuration file. 
+
+#### [Claude](https://github.com/kariemoorman/.dotfiles/tree/main/claude)
+Claude Code configuration scripts.
