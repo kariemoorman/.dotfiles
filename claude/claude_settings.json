@@ -1,4 +1,4 @@
-
+{
   "permissions": {
     "allow": [
       "Read(/opt/workspace/CLAUDE_ONLY/**)",
@@ -108,7 +108,7 @@
       ],
       "allowRead": [
         "/opt/workspace/CLAUDE_ONLY",
-	      "/Users/claude_agent/.scripts"
+	"/Users/claude_agent/.scripts"
       ]
     }
   }
